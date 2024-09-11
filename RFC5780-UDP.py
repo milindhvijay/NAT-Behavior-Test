@@ -1,3 +1,4 @@
+from os import execlpe
 import socket
 import random
 import struct
@@ -49,3 +50,28 @@ def parse_stun_response(response):
         return None
     except Exception:
         return None
+
+def send_stun_request(stun_host, stun_port, source_ip, source_port, retries=3, timeout=5):
+    for attempt in range(retries):
+        try:
+            #Create a UDP socket
+            sock = socket.socket(socket.AF_INET6 if ':' in source_ip else socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(timeout)
+            try:
+                sock.bind((source_ip, source_port))
+            except OSError as e:
+                print(f"Error binding to port {source_port}: {e}")
+                continue
+            message = build_binding_request()
+            sock.sendto(message, (stun_host, stun_port))
+            response, _ = sock.recvfrom(2048)
+            mapped_address =  parse_stun_response(response)
+            return mapped_address, source_ip, source_port
+        except socket.timeout:
+            print(f"Socket timed out on attempt {attempt + 1}/{retries} from port {source_port}")
+        except Exception as e:
+            print(f"Error sending STUN request: {e}")
+        finally:
+            sock.close()
+            time.sleep(1)
+    return None, None, None
