@@ -78,10 +78,10 @@ def send_stun_request(stun_host, stun_port, source_ip, source_port, retries=3, t
 
 def get_source_ip():
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        source_ip = s.getsockname()[0]
-        s.close()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.connect(("8.8.8.8", 80))
+        source_ip = sock.getsockname()[0]
+        sock.close()
         return source_ip
     except Exception as e:
         print(f"Error getting source IP: {e}")
@@ -89,10 +89,10 @@ def get_source_ip():
 
 def get_source_ipv6():
     try:
-        s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-        s.connect(("2001:4860:4860::8888", 80))
-        source_ip = s.getpeername()[0]
-        s.close()
+        sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+        sock.connect(("2001:4860:4860::8888", 80))
+        source_ip = sock.getpeername()[0]
+        sock.close()
         return source_ip
     except Exception as e:
         print(f"Error getting source IPv6: {e}")
@@ -139,3 +139,42 @@ def mapping_behavior(stun_host, stun_port, source_ip, source_port):
                 print("Mapping behavior: Address and Port-Dependent")
     else:
         print("Failed to determine Mapping behavior")
+
+def filtering_behavior(stun_host, stun_port, source_ip, source_port):
+    sock = socket.socket(socket.AF_INET6 if ':' in source_ip else socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind((source_ip, source_port))
+    sock.settimeout(5)
+
+    def send_change_request(change_ip, change_port):
+        #Sends STUN request with CHANGE-REQUEST attribute
+        transaction_id = b''.join(struct.pack('!B', random.randint(0,255)) for _ in range(12))
+        message_type = struct.pack('!H', BINDING_REQUEST)
+        message_length = struct.pack('!H', 8)
+        magic_cookie = struct.pack('!I', MAGIC_COOKIE)
+        change_request_value = (change_ip << 2) | (change_port << 1)
+        change_request = struct.pack('!HHI', 0x0003, 4, change_request_value)
+
+        message = message_type + message_length + magic_cookie + transaction_id + change_request
+
+        try:
+            sock.sendto(message, (stun_host, stun_port))
+            response, _ = sock.recvfrom(2048)
+            return True
+        except socket.timeout:
+            return False
+
+    try:
+        #Test 1: Change both IP and port
+        response1 = send_change_request(True, True)
+        if response1:
+            print("Fitering behavior: Endpoint-Independent")
+            return
+
+        #Test 2: Change IP only
+        response2 = send_change_request(True, False)
+        if response2:
+            print("Filtering behavior: Address-Dependent")
+        else:
+            print("Filtering behavior: Address and Port-Dependent")
+    finally:
+        sock.close()
