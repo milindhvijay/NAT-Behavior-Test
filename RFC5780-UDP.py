@@ -97,3 +97,23 @@ def get_source_ipv6():
     except Exception as e:
         print(f"Error getting source IPv6: {e}")
         return None
+
+def test_stun(server, port, use_ipv6=False):
+    source_ip = get_source_ipv6() if use_ipv6 else get_source_ip()
+    source_port = random.randint(49152, 65535)
+    response, source_ip, source_port = send_stun_request(server, port, source_ip, source_port)
+
+    if response:
+        external_ip, external_port = response
+        print("Binding status: Success")
+        if ':' in (source_ip or ''):
+            print(f"Internal: [{source_ip}]:{source_port}")
+            print(f"External: [{external_ip}]:{external_port}")
+        else:
+            print(f"Internal: {source_ip}:{source_port}")
+            print(f"External: {external_ip}:{external_port}")
+    else:
+        external_ip, external_port = None, None
+        print("Binding status: Failed")
+
+    return external_ip, external_port, source_ip, source_port
