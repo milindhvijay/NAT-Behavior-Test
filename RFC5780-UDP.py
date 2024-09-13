@@ -178,3 +178,22 @@ def filtering_behavior(stun_host, stun_port, source_ip, source_port):
             print("Filtering behavior: Address and Port-Dependent")
     finally:
         sock.close()
+
+def main():
+    stun_host = input("STUN server host: ")
+    stun_port_input = input("STUN server port (default is 3478): ")
+    use_ipv6_input = input("Use IPv6? (yes/no): ").strip().lower() == 'yes'
+
+    if stun_port_input:
+        stun_port = int(stun_port_input)
+    else:
+        stun_port = 3478
+
+    external_ip, external_port, source_ip, source_port = test_stun(stun_host, stun_port, use_ipv6=use_ipv6_input)
+
+    if external_ip and external_port:
+        mapping_behavior(stun_host, stun_port, source_ip, source_port)
+        filtering_behavior(stun_host, stun_port, source_ip, source_port)
+
+if __name__ == "__main__":
+    main()
