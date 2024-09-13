@@ -1,4 +1,3 @@
-from os import execlpe
 import socket
 import random
 import struct
