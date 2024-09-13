@@ -117,3 +117,25 @@ def test_stun(server, port, use_ipv6=False):
         print("Binding status: Failed")
 
     return external_ip, external_port, source_ip, source_port
+
+def mapping_behavior(stun_host, stun_port, source_ip, source_port):
+    #Test 1: Send to primary STUN server
+    response1 = send_stun_request(stun_host, stun_port, source_ip, source_port)
+    time.sleep(1)
+    #Test 2: Change STUN port
+    response2 = send_stun_request(stun_host, stun_port + 1, source_ip, source_port)
+
+    if response1:
+        if (response1[0] == (source_ip, source_port)):
+            print("Mapping behavior: Direct")
+        elif (response1[0] == response2[0]):
+            print("Mapping behavior: Endpoint-Independent")
+        elif (response1[0] != response2[0]):
+            #Test 3: Change source port
+            response3 = send_stun_request(stun_host, stun_port, source_ip, source_port + 1)
+            if (response3[0] == response2[0]):
+                print("Mapping behavior: Address-Dependent")
+            else:
+                print("Mapping behavior: Address and Port-Dependent")
+    else:
+        print("Failed to determine Mapping behavior")
