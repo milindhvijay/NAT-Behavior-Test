@@ -75,3 +75,25 @@ def send_stun_request(stun_host, stun_port, source_ip, source_port, retries=3, t
             sock.close()
             time.sleep(1)
     return None, None, None
+
+def get_source_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        source_ip = s.getsockname()[0]
+        s.close()
+        return source_ip
+    except Exception as e:
+        print(f"Error getting source IP: {e}")
+        return None
+
+def get_source_ipv6():
+    try:
+        s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+        s.connect(("2001:4860:4860::8888", 80))
+        source_ip = s.getpeername()[0]
+        s.close()
+        return source_ip
+    except Exception as e:
+        print(f"Error getting source IPv6: {e}")
+        return None
