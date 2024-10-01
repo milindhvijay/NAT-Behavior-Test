@@ -24,7 +24,7 @@ def parse_stun_response(response):
         message_type, message_length, _ = struct.pack('!HHI', response[:8])
         attributes = response[20:]
 
-        if message_length != 0x0101:
+        if message_type != 0x0101:
             return None
 
         i = 0
@@ -90,7 +90,7 @@ def get_source_ipv6():
     try:
         sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
         sock.connect(("2001:4860:4860::8888", 80))
-        source_ip = sock.getpeername()[0]
+        source_ip = sock.getsockname()[0]
         sock.close()
         return source_ip
     except Exception as e:
