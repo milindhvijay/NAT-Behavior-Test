@@ -21,7 +21,7 @@ def parse_stun_response(response):
         return None
 
     try:
-        message_type, message_length, _ = struct.pack('!HHI', response[:8])
+        message_type, message_length, _ = struct.unpack('!HHI', response[:8])
         attributes = response[20:]
 
         if message_type != 0x0101:
@@ -31,7 +31,7 @@ def parse_stun_response(response):
         while i < len(attributes):
             if i + 4 > len(attributes):
                 break
-            attribute_type, attribute_length = struct.pack('!HH', attributes[i:i+4])
+            attribute_type, attribute_length = struct.unpack('!HH', attributes[i:i+4])
             i += 4
             if i + attribute_length > len(attributes):
                 break
@@ -47,7 +47,8 @@ def parse_stun_response(response):
                         return (ip, port)
             i += attribute_length
         return None
-    except Exception:
+    except Exception as e:
+        print(f"Error parsing STUN response: {e}")
         return None
 
 def send_stun_request(stun_host, stun_port, source_ip, source_port, retries=3, timeout=5):
