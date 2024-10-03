@@ -3,7 +3,7 @@ import random
 import struct
 import time
 
-# Constants for STUN Message
+#Constants for STUN Message
 MAGIC_COOKIE = 0x2112A442
 BINDING_REQUEST = 0x0001
 
@@ -76,10 +76,14 @@ def send_stun_request(stun_host, stun_port, source_ip, source_port, retries=3, t
             time.sleep(1)
     return None, None, None
 
-def get_source_ip():
+def get_source_ip(use_ipv6=False):
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.connect(("8.8.8.8", 80))
+        if use_ipv6:
+            sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+            sock.connect(("2001:4860:4860::8888", 80))
+        else:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.connect(("8.8.8.8", 80))
         source_ip = sock.getsockname()[0]
         sock.close()
         return source_ip
@@ -87,19 +91,8 @@ def get_source_ip():
         print(f"Error getting source IP: {e}")
         return None
 
-def get_source_ipv6():
-    try:
-        sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-        sock.connect(("2001:4860:4860::8888", 80))
-        source_ip = sock.getsockname()[0]
-        sock.close()
-        return source_ip
-    except Exception as e:
-        print(f"Error getting source IPv6: {e}")
-        return None
-
 def test_stun(server, port, use_ipv6=False):
-    source_ip = get_source_ipv6() if use_ipv6 else get_source_ip()
+    source_ip = get_source_ip()
     source_port = random.randint(49152, 65535)
     response, source_ip, source_port = send_stun_request(server, port, source_ip, source_port)
 
@@ -184,10 +177,7 @@ def main():
     stun_port_input = input("STUN server port (default is 3478): ")
     use_ipv6_input = input("Use IPv6? (yes/no): ").strip().lower() == 'yes'
 
-    if stun_port_input:
-        stun_port = int(stun_port_input)
-    else:
-        stun_port = 3478
+    stun_port = int(stun_port_input) if stun_port_input else 3478
 
     external_ip, external_port, source_ip, source_port = test_stun(stun_host, stun_port, use_ipv6=use_ipv6_input)
 
