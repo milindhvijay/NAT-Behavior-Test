@@ -2,6 +2,7 @@ import socket
 import struct
 import random
 import time
+import sys
 
 #Constants for STUN Message
 MAGIC_COOKIE = 0x2112A442
@@ -131,7 +132,13 @@ def tcp_mapping_behavior(stun_host, stun_port, source_ip):
         print("Failed to determine TCP Mapping behavior")
 
 def main():
-    stun_host = input("STUN server host (must support TCP): ")
+    # Get STUN server from command line argument if provided
+    if len(sys.argv) > 1:
+        stun_host = sys.argv[1]
+        print(f"Using STUN server: {stun_host}")
+    else:
+        stun_host = input("STUN server host (must support TCP): ")
+    
     stun_port_input = input("STUN server port (default is 3478): ")
     use_ipv6_input = input("Use IPv6? (yes/no): ").strip().lower() == 'yes'
 
