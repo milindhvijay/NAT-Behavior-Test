@@ -213,8 +213,18 @@ def main():
     else:
         stun_host = input("STUN server host: ")
     
-    stun_port_input = input("STUN server port (default is 3478): ")
-    stun_port = int(stun_port_input) if stun_port_input else 3478
+    # Get port from command line or use default
+    if len(sys.argv) > 2:
+        try:
+            stun_port = int(sys.argv[2])
+            print(f"Using port: {stun_port}")
+        except ValueError:
+            stun_port = 3478
+            print(f"Invalid port specified, using default: {stun_port}")
+    else:
+        # Only ask for port if it wasn't provided via command line
+        stun_port = 3478
+        print(f"Using default port: {stun_port}")
     
     # Automatically check IPv6 connectivity
     has_ipv6 = check_ipv6_connectivity()
