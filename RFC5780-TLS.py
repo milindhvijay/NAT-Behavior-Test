@@ -4,7 +4,6 @@ import random
 import time
 import ssl
 import sys
-import concurrent.futures
 
 #Constants for STUN Message
 MAGIC_COOKIE = 0x2112A442
@@ -12,7 +11,7 @@ BINDING_REQUEST = 0x0001
 
 def build_binding_request():
     #Generate a random 96-bit transaction ID
-    transaction_id = b''.join(struct.pack('!B', random.randint(0, 255)) for _ in range(12))
+    transaction_id = random.randbytes(12)
     message_type = struct.pack('!H', BINDING_REQUEST)
     message_length = struct.pack('!H', 0) #No attributes, thus length is 0
     magic_cookie = struct.pack('!I', MAGIC_COOKIE)
@@ -50,22 +49,23 @@ def parse_stun_response(response):
                         return (ip, port)
             i += attribute_length
         return None
-    except Exception as e:
-        print(f"Error parsing STUN response: {e}")
+    except Exception:
         return None
 
 def send_tls_stun_request(stun_host, stun_port, source_ip, timeout=5):
+    # Create SSL context once (instead of on every retry)
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    
+    sock = None
+    secure_sock = None
     for _ in range(5):
         try:
             source_port = random.randint(49152, 65535)
             sock = socket.socket(socket.AF_INET6 if ':' in source_ip else socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(timeout)
             sock.bind((source_ip, source_port))
-
-            #Create SSL context
-            context = ssl.create_default_context()
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
 
             #Wrap the socket with SSL
             secure_sock = context.wrap_socket(sock, server_hostname=stun_host)
@@ -76,16 +76,16 @@ def send_tls_stun_request(stun_host, stun_port, source_ip, timeout=5):
 
             response = secure_sock.recv(2048)
             mapped_address = parse_stun_response(response)
+            secure_sock.close()
             return mapped_address, source_ip, source_port
-        except (socket.error, ssl.SSLError) as e:
-            print(f"Error sending TLS STUN request (retrying): {e}")
-        finally:
-            try:
-                secure_sock.close()
-            except:
-                pass
-            sock.close()
-    print("Failed to send TLS STUN request after multiple attempts")
+        except (socket.error, ssl.SSLError):
+            if secure_sock:
+                try:
+                    secure_sock.close()
+                except:
+                    pass
+            elif sock:
+                sock.close()
     return None, None, None
 
 def check_ipv6_connectivity():
@@ -124,7 +124,6 @@ def test_stun(server, port, use_ipv6=False):
 
     if response:
         external_ip, external_port = response
-        print(f"{'IPv6' if use_ipv6 else 'IPv4'} Binding status: Success")
         if ':' in (source_ip or ''):
             print(f"Internal: [{source_ip}]:{source_port}")
             print(f"External: [{external_ip}]:{external_port}")
@@ -133,7 +132,7 @@ def test_stun(server, port, use_ipv6=False):
             print(f"External: {external_ip}:{external_port}")
     else:
         external_ip, external_port = None, None
-        print(f"{'IPv6' if use_ipv6 else 'IPv4'} Binding status: Failed")
+        print(f"Failed to get STUN response")
 
     return external_ip, external_port, source_ip, source_port
 
@@ -181,38 +180,36 @@ def main():
         stun_host = sys.argv[1]
         print(f"Using STUN server: {stun_host}")
     else:
-        stun_host = input("STUN server host (must support TLS): ")
+        stun_host = input("STUN server host: ")
+    
+    # Check for skip-ipv6 flag
+    skip_ipv6 = '--skip-ipv6' in sys.argv
     
     # Get port from command line or use default
-    if len(sys.argv) > 2:
+    port_arg_index = 2
+    if len(sys.argv) > port_arg_index and sys.argv[port_arg_index] != '--skip-ipv6':
         try:
-            stun_port = int(sys.argv[2])
+            stun_port = int(sys.argv[port_arg_index])
             print(f"Using port: {stun_port}")
         except ValueError:
             stun_port = 5349
-            print(f"Invalid port specified, using default: {stun_port}")
+            print(f"Invalid port specified, using default TLS port: {stun_port}")
     else:
         # Only ask for port if it wasn't provided via command line
         stun_port = 5349
         print(f"Using default port: {stun_port}")
     
-    # Automatically check IPv6 connectivity
-    has_ipv6 = check_ipv6_connectivity()
-    
     # Always run IPv4 tests
     ipv4_success = run_tests(stun_host, stun_port, 4)
     
-    # Run IPv6 tests only if connectivity is available
-    if has_ipv6:
+    # Run IPv6 tests only if not skipped
+    if not skip_ipv6:
         try:
             ipv6_success = run_tests(stun_host, stun_port, 6)
             if not ipv6_success:
                 print("The STUN server may not support IPv6 TLS or IPv6 connectivity issues occurred.")
-        except Exception as e:
-            print(f"\nError during IPv6 TLS testing: {e}")
-            print("The STUN server may not support IPv6 TLS.")
-    else:
-        print("\nNo IPv6 connectivity detected. Skipping IPv6 tests.")
+        except Exception:
+            print("The STUN server may not support IPv6 TLS or IPv6 connectivity issues occurred.")
 
 
 if __name__ == "__main__":

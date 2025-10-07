@@ -3,7 +3,6 @@ import struct
 import random
 import time
 import sys
-import concurrent.futures
 
 #Constants for STUN Message
 MAGIC_COOKIE = 0x2112A442
@@ -11,7 +10,7 @@ BINDING_REQUEST = 0x0001
 
 def build_binding_request():
     #Generate a random 96-bit transaction ID
-    transaction_id = b''.join(struct.pack('!B', random.randint(0, 255)) for _ in range(12))
+    transaction_id = random.randbytes(12)
     message_type = struct.pack('!H', BINDING_REQUEST)
     message_length = struct.pack('!H', 0)  #No attributes, thus length is 0
     magic_cookie = struct.pack('!I', MAGIC_COOKIE)
@@ -49,11 +48,11 @@ def parse_stun_response(response):
                         return (ip, port)
             i += attribute_length
         return None
-    except Exception as e:
-        print(f"Error parsing STUN response: {e}")
+    except Exception:
         return None
 
 def send_tcp_stun_request(stun_host, stun_port, source_ip, timeout=5):
+    sock = None
     for _ in range(5):  #Try up to 5 times
         try:
             source_port = random.randint(49152, 65535)
@@ -67,12 +66,11 @@ def send_tcp_stun_request(stun_host, stun_port, source_ip, timeout=5):
 
             response = sock.recv(2048)
             mapped_address = parse_stun_response(response)
-            return mapped_address, source_ip, source_port
-        except socket.error as e:
-            print(f"Error sending TCP STUN request (retrying): {e}")
-        finally:
             sock.close()
-    print("Failed to send TCP STUN request")
+            return mapped_address, source_ip, source_port
+        except socket.error:
+            if sock:
+                sock.close()
     return None, None, None
 
 def check_ipv6_connectivity():
@@ -111,7 +109,6 @@ def test_stun(server, port, use_ipv6=False):
 
     if response:
         external_ip, external_port = response
-        print(f"{'IPv6' if use_ipv6 else 'IPv4'} Binding status: Success")
         if ':' in (source_ip or ''):
             print(f"Internal: [{source_ip}]:{source_port}")
             print(f"External: [{external_ip}]:{external_port}")
@@ -120,7 +117,7 @@ def test_stun(server, port, use_ipv6=False):
             print(f"External: {external_ip}:{external_port}")
     else:
         external_ip, external_port = None, None
-        print(f"{'IPv6' if use_ipv6 else 'IPv4'} Binding status: Failed")
+        print(f"Failed to get STUN response")
 
     return external_ip, external_port, source_ip, source_port
 
@@ -168,12 +165,16 @@ def main():
         stun_host = sys.argv[1]
         print(f"Using STUN server: {stun_host}")
     else:
-        stun_host = input("STUN server host (must support TCP): ")
+        stun_host = input("STUN server host: ")
+    
+    # Check for skip-ipv6 flag
+    skip_ipv6 = '--skip-ipv6' in sys.argv
     
     # Get port from command line or use default
-    if len(sys.argv) > 2:
+    port_arg_index = 2
+    if len(sys.argv) > port_arg_index and sys.argv[port_arg_index] != '--skip-ipv6':
         try:
-            stun_port = int(sys.argv[2])
+            stun_port = int(sys.argv[port_arg_index])
             print(f"Using port: {stun_port}")
         except ValueError:
             stun_port = 3478
@@ -183,23 +184,17 @@ def main():
         stun_port = 3478
         print(f"Using default port: {stun_port}")
     
-    # Automatically check IPv6 connectivity
-    has_ipv6 = check_ipv6_connectivity()
-    
     # Always run IPv4 tests
     ipv4_success = run_tests(stun_host, stun_port, 4)
     
-    # Run IPv6 tests only if connectivity is available
-    if has_ipv6:
+    # Run IPv6 tests only if not skipped
+    if not skip_ipv6:
         try:
             ipv6_success = run_tests(stun_host, stun_port, 6)
             if not ipv6_success:
                 print("The STUN server may not support IPv6 TCP or IPv6 connectivity issues occurred.")
-        except Exception as e:
-            print(f"\nError during IPv6 TCP testing: {e}")
-            print("The STUN server may not support IPv6 TCP.")
-    else:
-        print("\nNo IPv6 connectivity detected. Skipping IPv6 tests.")
+        except Exception:
+            print("The STUN server may not support IPv6 TCP or IPv6 connectivity issues occurred.")
 
 
 if __name__ == "__main__":
