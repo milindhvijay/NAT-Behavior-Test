@@ -10,7 +10,7 @@ BINDING_REQUEST = 0x0001
 
 def build_binding_request():
     #Generate a random 96-bit transaction ID
-    transaction_id = b''.join(struct.pack('!B', random.randint(0, 255)) for _ in range(12))
+    transaction_id = random.randbytes(12)
     message_type = struct.pack('!H', BINDING_REQUEST)
     message_length = struct.pack('!H', 0)  #No attributes, thus length is 0
     magic_cookie = struct.pack('!I', MAGIC_COOKIE)
@@ -48,11 +48,11 @@ def parse_stun_response(response):
                         return (ip, port)
             i += attribute_length
         return None
-    except Exception as e:
-        print(f"Error parsing STUN response: {e}")
+    except Exception:
         return None
 
 def send_tcp_stun_request(stun_host, stun_port, source_ip, timeout=5):
+    sock = None
     for _ in range(5):  #Try up to 5 times
         try:
             source_port = random.randint(49152, 65535)
@@ -66,13 +66,24 @@ def send_tcp_stun_request(stun_host, stun_port, source_ip, timeout=5):
 
             response = sock.recv(2048)
             mapped_address = parse_stun_response(response)
-            return mapped_address, source_ip, source_port
-        except socket.error as e:
-            print(f"Error sending TCP STUN request (retrying): {e}")
-        finally:
             sock.close()
-    print("Failed to send TCP STUN request")
+            return mapped_address, source_ip, source_port
+        except socket.error:
+            if sock:
+                sock.close()
     return None, None, None
+
+def check_ipv6_connectivity():
+    """Check if the host can access IPv6 sites"""
+    try:
+        # Try to connect to Google's IPv6 DNS server
+        sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+        sock.settimeout(2)
+        sock.connect(("2001:4860:4860::8888", 80))
+        sock.close()
+        return True
+    except Exception:
+        return False
 
 def get_source_ip(use_ipv6=False):
     try:
@@ -86,16 +97,18 @@ def get_source_ip(use_ipv6=False):
         sock.close()
         return source_ip
     except Exception as e:
-        print(f"Error getting source IP: {e}")
+        print(f"Error getting source IP for {'IPv6' if use_ipv6 else 'IPv4'}: {e}")
         return None
 
 def test_stun(server, port, use_ipv6=False):
     source_ip = get_source_ip(use_ipv6)
+    if not source_ip:
+        return None, None, None, None
+        
     response, source_ip, source_port = send_tcp_stun_request(server, port, source_ip)
 
     if response:
         external_ip, external_port = response
-        print("Binding status: Success")
         if ':' in (source_ip or ''):
             print(f"Internal: [{source_ip}]:{source_port}")
             print(f"External: [{external_ip}]:{external_port}")
@@ -104,7 +117,7 @@ def test_stun(server, port, use_ipv6=False):
             print(f"External: {external_ip}:{external_port}")
     else:
         external_ip, external_port = None, None
-        print("Binding status: Failed")
+        print(f"Failed to get STUN response")
 
     return external_ip, external_port, source_ip, source_port
 
@@ -131,23 +144,58 @@ def tcp_mapping_behavior(stun_host, stun_port, source_ip):
     else:
         print("Failed to determine TCP Mapping behavior")
 
+def run_tests(stun_host, stun_port, ip_version):
+    """Run tests for a specific IP version"""
+    print(f"\n{'=' * 50}")
+    print(f"Testing {'IPv6' if ip_version == 6 else 'IPv4'} TCP")
+    print(f"{'=' * 50}")
+    
+    external_ip, external_port, source_ip, _ = test_stun(
+        stun_host, stun_port, use_ipv6=(ip_version == 6)
+    )
+
+    if external_ip and external_port:
+        tcp_mapping_behavior(stun_host, stun_port, source_ip)
+        return True
+    return False
+
 def main():
     # Get STUN server from command line argument if provided
     if len(sys.argv) > 1:
         stun_host = sys.argv[1]
         print(f"Using STUN server: {stun_host}")
     else:
-        stun_host = input("STUN server host (must support TCP): ")
+        stun_host = input("STUN server host: ")
     
-    stun_port_input = input("STUN server port (default is 3478): ")
-    use_ipv6_input = input("Use IPv6? (yes/no): ").strip().lower() == 'yes'
+    # Check for skip-ipv6 flag
+    skip_ipv6 = '--skip-ipv6' in sys.argv
+    
+    # Get port from command line or use default
+    port_arg_index = 2
+    if len(sys.argv) > port_arg_index and sys.argv[port_arg_index] != '--skip-ipv6':
+        try:
+            stun_port = int(sys.argv[port_arg_index])
+            print(f"Using port: {stun_port}")
+        except ValueError:
+            stun_port = 3478
+            print(f"Invalid port specified, using default: {stun_port}")
+    else:
+        # Only ask for port if it wasn't provided via command line
+        stun_port = 3478
+        print(f"Using default port: {stun_port}")
+    
+    # Always run IPv4 tests
+    ipv4_success = run_tests(stun_host, stun_port, 4)
+    
+    # Run IPv6 tests only if not skipped
+    if not skip_ipv6:
+        try:
+            ipv6_success = run_tests(stun_host, stun_port, 6)
+            if not ipv6_success:
+                print("The STUN server may not support IPv6 TCP or IPv6 connectivity issues occurred.")
+        except Exception:
+            print("The STUN server may not support IPv6 TCP or IPv6 connectivity issues occurred.")
 
-    stun_port = int(stun_port_input) if stun_port_input else 3478
-
-    external_ip, external_port, source_ip, _ = test_stun(stun_host, stun_port, use_ipv6=use_ipv6_input)
-
-    if external_ip and external_port:
-        tcp_mapping_behavior(stun_host, stun_port, source_ip)
 
 if __name__ == "__main__":
     main()
