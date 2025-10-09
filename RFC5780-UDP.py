@@ -91,7 +91,11 @@ def check_ipv6_connectivity():
     except Exception:
         return False
 
-def get_source_ip(use_ipv6=False):
+def get_source_ip(use_ipv6=False, interface_ip=None):
+    # If interface IP is provided, use it directly
+    if interface_ip:
+        return interface_ip
+    
     try:
         if use_ipv6:
             sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
@@ -106,8 +110,8 @@ def get_source_ip(use_ipv6=False):
         print(f"Error getting source IP for {'IPv6' if use_ipv6 else 'IPv4'}: {e}")
         return None
 
-def test_stun(server, port, use_ipv6=False):
-    source_ip = get_source_ip(use_ipv6)
+def test_stun(server, port, use_ipv6=False, interface_ip=None):
+    source_ip = get_source_ip(use_ipv6, interface_ip)
     if not source_ip:
         return None, None, None, None
         
@@ -189,14 +193,14 @@ def filtering_behavior(stun_host, stun_port, source_ip, source_port):
     finally:
         sock.close()
 
-def run_tests(stun_host, stun_port, ip_version):
+def run_tests(stun_host, stun_port, ip_version, interface_ip=None):
     """Run tests for a specific IP version"""
     print(f"\n{'=' * 50}")
     print(f"Testing {'IPv6' if ip_version == 6 else 'IPv4'}")
     print(f"{'=' * 50}")
     
     external_ip, external_port, source_ip, source_port = test_stun(
-        stun_host, stun_port, use_ipv6=(ip_version == 6)
+        stun_host, stun_port, use_ipv6=(ip_version == 6), interface_ip=interface_ip
     )
 
     if external_ip and external_port:
@@ -213,12 +217,34 @@ def main():
     else:
         stun_host = input("STUN server host: ")
     
-    # Check for skip-ipv6 flag
+    # Check for flags
     skip_ipv6 = '--skip-ipv6' in sys.argv
+    
+    # Get interface IPs if specified
+    interface_ipv4 = None
+    interface_ipv6 = None
+    if '--interface-ipv4' in sys.argv:
+        try:
+            interface_idx = sys.argv.index('--interface-ipv4')
+            if interface_idx + 1 < len(sys.argv):
+                interface_ipv4 = sys.argv[interface_idx + 1]
+        except (ValueError, IndexError):
+            pass
+    
+    if '--interface-ipv6' in sys.argv:
+        try:
+            interface_idx = sys.argv.index('--interface-ipv6')
+            if interface_idx + 1 < len(sys.argv):
+                interface_ipv6 = sys.argv[interface_idx + 1]
+        except (ValueError, IndexError):
+            pass
+    
+    if interface_ipv4 or interface_ipv6:
+        print(f"Using interface: IPv4={interface_ipv4 or 'auto'}, IPv6={interface_ipv6 or 'auto'}")
     
     # Get port from command line or use default
     port_arg_index = 2
-    if len(sys.argv) > port_arg_index and sys.argv[port_arg_index] != '--skip-ipv6':
+    if len(sys.argv) > port_arg_index and sys.argv[port_arg_index] not in ['--skip-ipv6', '--interface-ipv4', '--interface-ipv6']:
         try:
             stun_port = int(sys.argv[port_arg_index])
             print(f"Using port: {stun_port}")
@@ -231,12 +257,12 @@ def main():
         print(f"Using default port: {stun_port}")
     
     # Always run IPv4 tests
-    ipv4_success = run_tests(stun_host, stun_port, 4)
+    ipv4_success = run_tests(stun_host, stun_port, 4, interface_ipv4)
     
     # Run IPv6 tests only if not skipped
     if not skip_ipv6:
         try:
-            ipv6_success = run_tests(stun_host, stun_port, 6)
+            ipv6_success = run_tests(stun_host, stun_port, 6, interface_ipv6)
             if not ipv6_success:
                 print("The STUN server may not support IPv6 or IPv6 connectivity issues occurred.")
         except Exception:

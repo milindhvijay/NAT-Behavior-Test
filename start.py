@@ -3,6 +3,7 @@ import subprocess
 import sys
 import re
 import socket
+import platform
 
 # Compile regex patterns once at module level for better performance
 DOMAIN_PATTERN = re.compile(r'^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$')
@@ -32,6 +33,157 @@ def print_title():
         """
     print(title)
 
+def get_network_interfaces():
+    """Get all network interfaces with their names and IP addresses (cross-platform)"""
+    interfaces = []
+    system = platform.system()
+    
+    try:
+        if system == 'Darwin' or system == 'Linux':
+            # macOS and Linux: use ifconfig or ip command
+            try:
+                # Try ifconfig first (works on macOS and many Linux)
+                import subprocess
+                result = subprocess.run(['ifconfig'], capture_output=True, text=True, timeout=5)
+                output = result.stdout
+                
+                current_if = None
+                for line in output.split('\n'):
+                    # Check if this is an interface name line
+                    if line and not line[0].isspace():
+                        # Extract interface name (before the colon)
+                        if_name = line.split(':')[0].strip()
+                        # Skip loopback
+                        if if_name and if_name != 'lo' and if_name != 'lo0':
+                            current_if = if_name
+                    elif current_if and 'inet ' in line:
+                        # Extract IPv4 address
+                        parts = line.strip().split()
+                        for i, part in enumerate(parts):
+                            if part == 'inet' and i + 1 < len(parts):
+                                ip = parts[i + 1]
+                                # Skip loopback IPs
+                                if not ip.startswith('127.'):
+                                    interfaces.append({
+                                        'name': current_if,
+                                        'ip': ip,
+                                        'type': 'IPv4'
+                                    })
+                                break
+                    elif current_if and 'inet6 ' in line:
+                        # Extract IPv6 address
+                        parts = line.strip().split()
+                        for i, part in enumerate(parts):
+                            if part == 'inet6' and i + 1 < len(parts):
+                                ip = parts[i + 1]
+                                # Remove zone ID if present
+                                ip = ip.split('%')[0]
+                                # Skip link-local and loopback
+                                if not ip.startswith('fe80') and not ip.startswith('::1'):
+                                    interfaces.append({
+                                        'name': current_if,
+                                        'ip': ip,
+                                        'type': 'IPv6'
+                                    })
+                                break
+            except Exception:
+                pass
+        
+        elif system == 'Windows':
+            # Windows: use ipconfig command
+            try:
+                import subprocess
+                result = subprocess.run(['ipconfig'], capture_output=True, text=True, timeout=5)
+                output = result.stdout
+                
+                current_if = None
+                for line in output.split('\n'):
+                    line = line.rstrip()
+                    
+                    # Check if this is an adapter line
+                    if line and not line[0].isspace() and 'adapter' in line:
+                        # Extract interface name
+                        # Format: "Ethernet adapter Ethernet:" or "Wireless LAN adapter Wi-Fi:"
+                        parts = line.split('adapter')
+                        if len(parts) >= 2:
+                            if_name = parts[1].strip().rstrip(':')
+                            # Skip loopback
+                            if if_name and 'Loopback' not in if_name:
+                                current_if = if_name
+                    
+                    elif current_if and 'IPv4 Address' in line:
+                        # Extract IPv4 address
+                        # Format: "   IPv4 Address. . . . . . . . . . . : 192.168.1.100"
+                        if ':' in line:
+                            ip = line.split(':')[-1].strip()
+                            # Remove (Preferred) suffix if present
+                            ip = ip.split('(')[0].strip()
+                            # Skip loopback IPs
+                            if ip and not ip.startswith('127.'):
+                                interfaces.append({
+                                    'name': current_if,
+                                    'ip': ip,
+                                    'type': 'IPv4'
+                                })
+                    
+                    elif current_if and 'IPv6 Address' in line and 'Link-local' not in line:
+                        # Extract IPv6 address (not link-local)
+                        # Format: "   IPv6 Address. . . . . . . . . . . : 2001:db8::1"
+                        if ':' in line:
+                            parts = line.split(':', 1)
+                            if len(parts) >= 2:
+                                ip = parts[1].strip()
+                                # Remove (Preferred) suffix if present
+                                ip = ip.split('(')[0].strip()
+                                # Remove zone ID if present (e.g., %12)
+                                ip = ip.split('%')[0]
+                                # Skip link-local and loopback
+                                if ip and not ip.startswith('fe80') and not ip.startswith('::1'):
+                                    interfaces.append({
+                                        'name': current_if,
+                                        'ip': ip,
+                                        'type': 'IPv6'
+                                    })
+            except Exception:
+                pass
+        
+        # Fallback if above methods fail
+        if not interfaces:
+            # Get default IPs as fallback
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.connect(("8.8.8.8", 80))
+                default_ip = sock.getsockname()[0]
+                sock.close()
+                if default_ip and not default_ip.startswith('127.'):
+                    interfaces.append({
+                        'name': 'default',
+                        'ip': default_ip,
+                        'type': 'IPv4'
+                    })
+            except Exception:
+                pass
+            
+            try:
+                sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+                sock.connect(("2001:4860:4860::8888", 80))
+                default_ip = sock.getsockname()[0]
+                sock.close()
+                if default_ip:
+                    default_ip = default_ip.split('%')[0]
+                    if not default_ip.startswith('fe80') and not default_ip.startswith('::1'):
+                        interfaces.append({
+                            'name': 'default',
+                            'ip': default_ip,
+                            'type': 'IPv6'
+                        })
+            except Exception:
+                pass
+    except Exception:
+        pass
+    
+    return interfaces
+
 def check_connectivity():
     """Check IPv4 and IPv6 connectivity once at the start"""
     ipv4_available = False
@@ -58,6 +210,57 @@ def check_connectivity():
         pass
     
     return ipv4_available, ipv6_available
+
+def select_network_interface(interfaces):
+    """Let user select which network interface to use"""
+    print("\nAvailable Network Interfaces:")
+    print("1. Auto-detect (use default interface)")
+    
+    if not interfaces:
+        print("\nNo network interfaces detected. Using auto-detect.")
+        return None
+    
+    # Group interfaces by name
+    interface_groups = {}
+    for iface in interfaces:
+        name = iface['name']
+        if name not in interface_groups:
+            interface_groups[name] = {'name': name, 'ipv4': None, 'ipv6': None}
+        if iface['type'] == 'IPv4':
+            interface_groups[name]['ipv4'] = iface['ip']
+        elif iface['type'] == 'IPv6':
+            interface_groups[name]['ipv6'] = iface['ip']
+    
+    # Display grouped interfaces
+    interface_list = list(interface_groups.values())
+    for idx, iface in enumerate(interface_list, start=2):
+        ips = []
+        if iface['ipv4']:
+            ips.append(f"IPv4: {iface['ipv4']}")
+        if iface['ipv6']:
+            ips.append(f"IPv6: {iface['ipv6']}")
+        print(f"{idx}. {iface['name']:<10} {', '.join(ips)}")
+    
+    while True:
+        try:
+            choice = input(f"\nSelect interface (1-{len(interface_list) + 1}): ").strip()
+            if not choice:
+                print("Error: Please select an interface.")
+                continue
+            
+            choice_num = int(choice)
+            if choice_num == 1:
+                return None  # Auto-detect
+            elif 2 <= choice_num <= len(interface_list) + 1:
+                selected = interface_list[choice_num - 2]
+                return selected
+            else:
+                print(f"Error: Please enter a number between 1 and {len(interface_list) + 1}.")
+        except ValueError:
+            print("Error: Please enter a valid number.")
+        except KeyboardInterrupt:
+            print("\n\nExiting...")
+            sys.exit(0)
 
 def print_stun_servers():
     print("\nSelect STUN server:")
@@ -174,7 +377,7 @@ def get_stun_server_choice():
             print(f"Error: '{user_input}' is not a valid option. Choose between 1-{len(STUN_SERVERS)}.")
             continue
 
-def run_test(script_name, stun_server_info, skip_ipv6=False):
+def run_test(script_name, stun_server_info, skip_ipv6=False, interface=None):
     try:
         server, port = stun_server_info
         
@@ -184,6 +387,14 @@ def run_test(script_name, stun_server_info, skip_ipv6=False):
             cmd.append(str(port))
         if skip_ipv6:
             cmd.append('--skip-ipv6')
+        if interface:
+            # Pass both IPv4 and IPv6 if available
+            if interface.get('ipv4'):
+                cmd.append('--interface-ipv4')
+                cmd.append(interface['ipv4'])
+            if interface.get('ipv6'):
+                cmd.append('--interface-ipv6')
+                cmd.append(interface['ipv6'])
             
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         
@@ -243,6 +454,20 @@ def main():
         print("\nNo network connectivity detected. Cannot run tests.")
         return
     
+    # Get network interfaces and let user select
+    interfaces = get_network_interfaces()
+    selected_interface = select_network_interface(interfaces)
+    
+    if selected_interface:
+        ips = []
+        if selected_interface['ipv4']:
+            ips.append(f"IPv4: {selected_interface['ipv4']}")
+        if selected_interface['ipv6']:
+            ips.append(f"IPv6: {selected_interface['ipv6']}")
+        print(f"\nUsing interface: {selected_interface['name']} ({', '.join(ips)})")
+    else:
+        print("\nUsing auto-detected default interface")
+    
     print_stun_servers()
     stun_server_info = get_stun_server_choice()
     
@@ -262,44 +487,49 @@ def main():
         print(f"\n{'#' * 70}")
         print(f"# {protocol} Test")
         print(f"{'#' * 70}\n")
-        behaviors = run_test(script, stun_server_info, skip_ipv6)
+        behaviors = run_test(script, stun_server_info, skip_ipv6, selected_interface)
         results.append((protocol, behaviors))
     
-    # Summary
-    print(f"\n{'=' * 70}")
+    # Summary - Display as table
+    print(f"\n{'=' * 90}")
     print("SUMMARY")
-    print(f"{'=' * 70}")
+    print(f"{'=' * 90}")
+    
+    # Prepare table data
+    table_rows = []
     for protocol, behaviors in results:
         if 'status' in behaviors:
             if behaviors['status'] == 'failed':
-                print(f"{protocol}:")
-                print(f"  FAILED")
-            else:
-                print(f"{protocol}:")
-                print(f"  ✓ COMPLETED")
+                table_rows.append([f"{protocol} (IPv4/IPv6)", 'FAILED', '-'])
         else:
-            print(f"{protocol}:")
-            # Display IPv4 results
+            # IPv4 results
             if behaviors.get('ipv4'):
-                print(f"  IPv4:")
                 if behaviors['ipv4'].get('status') == 'failed':
-                    print(f"    FAILED")
+                    table_rows.append([f"{protocol} (IPv4)", 'FAILED', '-'])
                 else:
-                    if 'mapping' in behaviors['ipv4']:
-                        print(f"    Mapping:    {behaviors['ipv4']['mapping']}")
-                    if 'filtering' in behaviors['ipv4']:
-                        print(f"    Filtering:  {behaviors['ipv4']['filtering']}")
-            # Display IPv6 results
+                    mapping = behaviors['ipv4'].get('mapping', '-')
+                    filtering = behaviors['ipv4'].get('filtering', '-')
+                    table_rows.append([f"{protocol} (IPv4)", mapping, filtering])
+            
+            # IPv6 results
             if behaviors.get('ipv6'):
-                print(f"  IPv6:")
                 if behaviors['ipv6'].get('status') == 'failed':
-                    print(f"    FAILED")
+                    table_rows.append([f"{protocol} (IPv6)", 'FAILED', '-'])
                 else:
-                    if 'mapping' in behaviors['ipv6']:
-                        print(f"    Mapping:    {behaviors['ipv6']['mapping']}")
-                    if 'filtering' in behaviors['ipv6']:
-                        print(f"    Filtering:  {behaviors['ipv6']['filtering']}")
-    print(f"{'=' * 70}\n")
+                    mapping = behaviors['ipv6'].get('mapping', '-')
+                    filtering = behaviors['ipv6'].get('filtering', '-')
+                    table_rows.append([f"{protocol} (IPv6)", mapping, filtering])
+    
+    # Print table header
+    print(f"{'Protocol':<18} {'Mapping Behavior':<35} {'Filtering Behavior':<35}")
+    print(f"{'-' * 18} {'-' * 35} {'-' * 35}")
+    
+    # Print table rows
+    for row in table_rows:
+        protocol_ver, mapping, filtering = row
+        print(f"{protocol_ver:<18} {mapping:<35} {filtering:<35}")
+    
+    print(f"{'=' * 90}\n")
 
 if __name__ == "__main__":
     main()
