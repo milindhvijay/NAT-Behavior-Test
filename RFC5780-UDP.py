@@ -218,6 +218,7 @@ def main():
         stun_host = input("STUN server host: ")
     
     # Check for flags
+    skip_ipv4 = '--skip-ipv4' in sys.argv
     skip_ipv6 = '--skip-ipv6' in sys.argv
     
     # Get interface IPs if specified
@@ -244,7 +245,7 @@ def main():
     
     # Get port from command line or use default
     port_arg_index = 2
-    if len(sys.argv) > port_arg_index and sys.argv[port_arg_index] not in ['--skip-ipv6', '--interface-ipv4', '--interface-ipv6']:
+    if len(sys.argv) > port_arg_index and sys.argv[port_arg_index] not in ['--skip-ipv4', '--skip-ipv6', '--interface-ipv4', '--interface-ipv6']:
         try:
             stun_port = int(sys.argv[port_arg_index])
             print(f"Using port: {stun_port}")
@@ -256,10 +257,11 @@ def main():
         stun_port = 3478
         print(f"Using default port: {stun_port}")
     
-    # Always run IPv4 tests
-    ipv4_success = run_tests(stun_host, stun_port, 4, interface_ipv4)
+    # Run IPv4 tests if not skipped
+    if not skip_ipv4:
+        ipv4_success = run_tests(stun_host, stun_port, 4, interface_ipv4)
     
-    # Run IPv6 tests only if not skipped
+    # Run IPv6 tests if not skipped
     if not skip_ipv6:
         try:
             ipv6_success = run_tests(stun_host, stun_port, 6, interface_ipv6)

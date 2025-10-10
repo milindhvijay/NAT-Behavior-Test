@@ -187,8 +187,11 @@ python3 RFC5780-UDP.py stun.hot-chilli.net --interface-ipv6 2001:db8::1
 # Both IPv4 and IPv6 on same interface
 python3 RFC5780-UDP.py stun.hot-chilli.net --interface-ipv4 10.1.10.2 --interface-ipv6 200::100
 
-# Skip IPv6 testing
+# Skip IPv6 testing (IPv4 only)
 python3 RFC5780-UDP.py stun.hot-chilli.net --skip-ipv6
+
+# Skip IPv4 testing (IPv6 only)
+python3 RFC5780-UDP.py stun.hot-chilli.net --skip-ipv4
 ```
 
 #### All Command-Line Options
@@ -204,6 +207,7 @@ Arguments:
 Options:
   --interface-ipv4 <ip>     Bind to specific IPv4 address
   --interface-ipv6 <ip>     Bind to specific IPv6 address
+  --skip-ipv4               Skip IPv4 tests (IPv6 only)
   --skip-ipv6               Skip IPv6 tests (IPv4 only)
 ```
 
@@ -217,6 +221,9 @@ python3 RFC5780-TCP.py stun.fitauto.ru --interface-ipv4 192.168.1.100
 
 # Test with custom port and skip IPv6
 python3 RFC5780-UDP.py stun.example.com 3479 --skip-ipv6
+
+# Test IPv6 only (skip IPv4)
+python3 RFC5780-UDP.py stun.hot-chilli.net --skip-ipv4
 
 # Full example with all options
 python3 RFC5780-TLS.py stun.hot-chilli.net 5349 --interface-ipv4 10.1.10.2 --interface-ipv6 200::100
@@ -304,6 +311,20 @@ NAT-Behavior-Test/
 - Verify NAT filtering policies per interface
 - Check if different networks have different security postures
 - Audit corporate network NAT behavior
+
+### When to Skip IP Versions
+
+**Skip IPv4 (--skip-ipv4):**
+- Testing IPv6-only networks
+- Verifying IPv6 deployment readiness
+- Isolating IPv6-specific NAT issues
+- Environments where IPv4 is disabled
+
+**Skip IPv6 (--skip-ipv6):**
+- IPv6 not available or not configured
+- Testing legacy IPv4-only infrastructure
+- Isolating IPv4-specific NAT issues
+- Faster testing when IPv6 is not relevant
 
 ## Troubleshooting
 
