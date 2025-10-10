@@ -336,34 +336,6 @@ NAT-Behavior-Test/
 - Different interfaces may have different NAT policies
 - Try running tests multiple times
 
-## Technical Details
-
-### Interface Detection Methods
-
-**macOS/Linux:**
-- Executes `ifconfig` and parses output
-- Extracts interface names (en0, en1, eth0, wlan0, etc.)
-- Identifies IPv4 addresses from `inet` lines
-- Identifies IPv6 addresses from `inet6` lines (excluding link-local)
-- Filters out loopback interfaces
-
-**Windows:**
-- Executes `ipconfig` and parses output
-- Extracts adapter names (Ethernet, Wi-Fi, etc.)
-- Identifies IPv4 from "IPv4 Address" lines
-- Identifies IPv6 from "IPv6 Address" lines (excluding link-local)
-- Removes zone IDs and (Preferred) suffixes
-- Filters out loopback adapters
-
-### Performance Optimizations
-
-- Precompiled regex patterns for fast domain validation
-- Efficient transaction ID generation using `random.randbytes()`
-- Optimized socket management with proper cleanup
-- SSL context reuse for faster TLS retries
-- Interface detection cached during startup
-- Parallel execution of IPv4 and IPv6 tests within same protocol
-
 ## Contributing
 
 Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
