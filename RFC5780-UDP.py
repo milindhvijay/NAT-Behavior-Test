@@ -181,7 +181,7 @@ def filtering_behavior(stun_host, stun_port, source_ip, source_port):
         #Test 1: Change both IP and port
         response1 = send_change_request(True, True)
         if response1:
-            print("Fitering behavior: Endpoint-Independent")
+            print("Filtering behavior: Endpoint-Independent")
             return
 
         #Test 2: Change IP only

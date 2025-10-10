@@ -93,6 +93,7 @@ Select an interface to test NAT behavior through that specific network path. Thi
 ### Example Output
 
 ```
+======================================================================
 NETWORK CONNECTIVITY
 ======================================================================
 IPv4: Available
@@ -101,11 +102,11 @@ IPv6: Available
 
 Available Network Interfaces:
 1. Auto-detect (use default interface)
-2. en7        IPv4: 10.1.10.2, IPv6: 200::100
+2. Ethernet   IPv4: 91.99.229.254, IPv6: 2a01:4f8:1c1a:98c6::1
 
 Select interface (1-2): 2
 
-Using interface: en7 (IPv4: 10.1.10.2, IPv6: 200::100)
+Using interface: Ethernet (IPv4: 91.99.229.254, IPv6: 2a01:4f8:1c1a:98c6::1)
 
 Select STUN server:
 1. stun.hot-chilli.net
@@ -115,40 +116,86 @@ Select STUN server:
 5. Custom Server
 Enter STUN server number (1-5): 1
 
+
 ######################################################################
 # UDP Test
 ######################################################################
+
 Using STUN server: stun.hot-chilli.net
+Using interface: IPv4=91.99.229.254, IPv6=2a01:4f8:1c1a:98c6::1
+Using default port: 3478
 
 ==================================================
 Testing IPv4
 ==================================================
-Internal: 10.1.10.2:52904
-External: 117.242.106.136:52904
-Mapping behavior: Endpoint-Independent
-Filtering behavior: Address and Port-Dependent
+Internal: 91.99.229.254:60760
+External: 91.99.229.254:60760
+Mapping behavior: Direct
+Filtering behavior: Endpoint-Independent
 
 ==================================================
 Testing IPv6
 ==================================================
-Internal: [200::100]:55832
-External: [2001:4490:4e6d:360f:d620:ff:feb1:2b3d]:55832
-Mapping behavior: Endpoint-Independent
-Filtering behavior: Address and Port-Dependent
+Internal: [2a01:4f8:1c1a:98c6::1]:64275
+External: [2a01:4f8:1c1a:98c6::1]:64275
+Mapping behavior: Direct
+Filtering behavior: Endpoint-Independent
 
-... (TCP and TLS tests follow)
+######################################################################
+# TCP Test
+######################################################################
+
+Using STUN server: stun.hot-chilli.net
+Using interface: IPv4=91.99.229.254, IPv6=2a01:4f8:1c1a:98c6::1
+Using default port: 3478
+
+==================================================
+Testing IPv4 TCP
+==================================================
+Internal: 91.99.229.254:60344
+External: 91.99.229.254:60344
+TCP Mapping behavior: Direct
+
+==================================================
+Testing IPv6 TCP
+==================================================
+Internal: [2a01:4f8:1c1a:98c6::1]:54475
+External: [2a01:4f8:1c1a:98c6::1]:54475
+TCP Mapping behavior: Direct
+
+######################################################################
+# TLS Test
+######################################################################
+
+Using STUN server: stun.hot-chilli.net
+Using interface: IPv4=91.99.229.254, IPv6=2a01:4f8:1c1a:98c6::1
+Using default port: 5349
+
+==================================================
+Testing IPv4 TLS
+==================================================
+Internal: 91.99.229.254:58364
+External: 91.99.229.254:58364
+TLS Mapping behavior: Direct
+
+==================================================
+Testing IPv6 TLS
+==================================================
+Internal: [2a01:4f8:1c1a:98c6::1]:64826
+External: [2a01:4f8:1c1a:98c6::1]:64826
+TLS Mapping behavior: Direct
 
 ==========================================================================================
 SUMMARY
 ==========================================================================================
-Protocol           Mapping Behavior                    Filtering Behavior                 
+Protocol           Mapping Behavior                    Filtering Behavior
 ------------------ ----------------------------------- -----------------------------------
-UDP (IPv4)         Endpoint-Independent                Address and Port-Dependent         
-UDP (IPv6)         Endpoint-Independent                Address and Port-Dependent         
-TCP (IPv4)         Address and Port-Dependent          -                                  
-TCP (IPv6)         Address and Port-Dependent          -                                  
-TLS (IPv4)         Address and Port-Dependent          -                                  
-TLS (IPv6)         Address and Port-Dependent          -                                  
+UDP (IPv4)         Direct                              Endpoint-Independent
+UDP (IPv6)         Direct                              Endpoint-Independent
+TCP (IPv4)         Direct                              -
+TCP (IPv6)         Direct                              -
+TLS (IPv4)         Direct                              -
+TLS (IPv6)         Direct                              -
 ==========================================================================================
 ```
 
