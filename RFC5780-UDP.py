@@ -4,29 +4,70 @@ import struct
 import time
 import sys
 
-#Constants for STUN Message
+# Constants for STUN Message
 MAGIC_COOKIE = 0x2112A442
 BINDING_REQUEST = 0x0001
 
+# STUN Attribute Types
+ATTR_MAPPED_ADDRESS = 0x0001
+ATTR_RESPONSE_ADDRESS = 0x0002
+ATTR_CHANGE_REQUEST = 0x0003
+ATTR_SOURCE_ADDRESS = 0x0004
+ATTR_CHANGED_ADDRESS = 0x0005
+ATTR_XOR_MAPPED_ADDRESS = 0x0020
+ATTR_SOFTWARE = 0x8022
+ATTR_RESPONSE_ORIGIN = 0x802B
+ATTR_OTHER_ADDRESS = 0x802C
+
 def build_binding_request():
-    #Generate a random 96-bit transaction ID
+    """Generate a STUN Binding Request with random transaction ID"""
     transaction_id = random.randbytes(12)
     message_type = struct.pack('!H', BINDING_REQUEST)
-    message_length = struct.pack('!H', 0) #No attributes, thus length is 0
+    message_length = struct.pack('!H', 0)  # No attributes, thus length is 0
     magic_cookie = struct.pack('!I', MAGIC_COOKIE)
     return message_type + message_length + magic_cookie + transaction_id
 
+def xor_address(ip_bytes, port, is_ipv6=False, transaction_id=None):
+    """XOR the address with magic cookie (and transaction ID for IPv6)"""
+    # XOR port with upper 16 bits of magic cookie
+    xored_port = port ^ (MAGIC_COOKIE >> 16)
+    
+    if is_ipv6:
+        # For IPv6: XOR with magic cookie + transaction ID (16 bytes total)
+        magic_bytes = struct.pack('!I', MAGIC_COOKIE) + (transaction_id or b'\x00' * 12)
+        xored_ip = bytes(a ^ b for a, b in zip(ip_bytes, magic_bytes))
+    else:
+        # For IPv4: XOR with magic cookie (4 bytes)
+        magic_bytes = struct.pack('!I', MAGIC_COOKIE)
+        xored_ip = bytes(a ^ b for a, b in zip(ip_bytes, magic_bytes))
+    
+    return xored_ip, xored_port
+
 def parse_stun_response(response):
-    #To parse the STUN response to extract the mapped address
+    """
+    Parse STUN response and extract mapped address.
+    Supports both MAPPED-ADDRESS and XOR-MAPPED-ADDRESS (preferred).
+    Also extracts OTHER-ADDRESS and RESPONSE-ORIGIN if present.
+    """
     if len(response) < 20:
         return None
 
     try:
-        message_type, message_length, _ = struct.unpack('!HHI', response[:8])
+        message_type, message_length, magic = struct.unpack('!HHI', response[:8])
+        transaction_id = response[8:20]
         attributes = response[20:]
 
+        # Check for Binding Success Response
         if message_type != 0x0101:
             return None
+
+        result = {
+            'mapped_address': None,
+            'xor_mapped_address': None,
+            'other_address': None,
+            'response_origin': None,
+            'software': None
+        }
 
         i = 0
         while i < len(attributes):
@@ -36,26 +77,96 @@ def parse_stun_response(response):
             i += 4
             if i + attribute_length > len(attributes):
                 break
-            if attribute_type == 0x0001: #Mapped Address attribute
-                if attribute_length >= 8:
-                    family = struct.unpack('!B', attributes[i+1:i+2])[0]
-                    port = struct.unpack('!H', attributes[i+2:i+4])[0]
-                    if family == 0x01 and attribute_length >= 8: #IPv4
-                        ip = socket.inet_ntoa(attributes[i+4:i+8])
-                        return (ip, port)
-                    elif family == 0x02 and attribute_length >= 20: #IPv6
-                        ip = socket.inet_ntop(socket.AF_INET6, attributes[i+4:i+20])
-                        return (ip, port)
+
+            attr_data = attributes[i:i+attribute_length]
+
+            if attribute_type == ATTR_MAPPED_ADDRESS:
+                result['mapped_address'] = parse_address_attribute(attr_data)
+            
+            elif attribute_type == ATTR_XOR_MAPPED_ADDRESS:
+                result['xor_mapped_address'] = parse_xor_address_attribute(attr_data, transaction_id)
+            
+            elif attribute_type == ATTR_OTHER_ADDRESS:
+                result['other_address'] = parse_xor_address_attribute(attr_data, transaction_id)
+            
+            elif attribute_type == ATTR_RESPONSE_ORIGIN:
+                result['response_origin'] = parse_xor_address_attribute(attr_data, transaction_id)
+            
+            elif attribute_type == ATTR_SOFTWARE:
+                try:
+                    result['software'] = attr_data.decode('utf-8').rstrip('\x00')
+                except:
+                    pass
+
+            # Move to next attribute (with padding to 4-byte boundary)
             i += attribute_length
-        return None
-    except Exception:
+            if attribute_length % 4 != 0:
+                i += 4 - (attribute_length % 4)
+
+        # Prefer XOR-MAPPED-ADDRESS over MAPPED-ADDRESS (RFC 5389 recommendation)
+        mapped = result['xor_mapped_address'] or result['mapped_address']
+        
+        if mapped:
+            return {
+                'address': mapped,
+                'other_address': result['other_address'],
+                'response_origin': result['response_origin'],
+                'software': result['software']
+            }
         return None
 
-def send_stun_request(stun_host, stun_port, source_ip, source_port, retries=3, timeout=5):
+    except Exception as e:
+        return None
+
+def parse_address_attribute(attr_data):
+    """Parse MAPPED-ADDRESS attribute (non-XORed)"""
+    if len(attr_data) < 8:
+        return None
+    
+    family = struct.unpack('!B', attr_data[1:2])[0]
+    port = struct.unpack('!H', attr_data[2:4])[0]
+    
+    if family == 0x01:  # IPv4
+        ip = socket.inet_ntoa(attr_data[4:8])
+        return (ip, port)
+    elif family == 0x02 and len(attr_data) >= 20:  # IPv6
+        ip = socket.inet_ntop(socket.AF_INET6, attr_data[4:20])
+        return (ip, port)
+    return None
+
+def parse_xor_address_attribute(attr_data, transaction_id):
+    """Parse XOR-MAPPED-ADDRESS attribute (XORed with magic cookie)"""
+    if len(attr_data) < 8:
+        return None
+    
+    family = struct.unpack('!B', attr_data[1:2])[0]
+    xored_port = struct.unpack('!H', attr_data[2:4])[0]
+    
+    # XOR port with upper 16 bits of magic cookie
+    port = xored_port ^ (MAGIC_COOKIE >> 16)
+    
+    if family == 0x01:  # IPv4
+        xored_ip = attr_data[4:8]
+        magic_bytes = struct.pack('!I', MAGIC_COOKIE)
+        ip_bytes = bytes(a ^ b for a, b in zip(xored_ip, magic_bytes))
+        ip = socket.inet_ntoa(ip_bytes)
+        return (ip, port)
+    elif family == 0x02 and len(attr_data) >= 20:  # IPv6
+        xored_ip = attr_data[4:20]
+        magic_bytes = struct.pack('!I', MAGIC_COOKIE) + transaction_id
+        ip_bytes = bytes(a ^ b for a, b in zip(xored_ip, magic_bytes))
+        ip = socket.inet_ntop(socket.AF_INET6, ip_bytes)
+        return (ip, port)
+    return None
+
+def send_stun_request(stun_host, stun_port, source_ip, source_port, retries=3, timeout=5, use_backoff=True):
+    """Send STUN request with exponential backoff retry logic"""
     sock = None
+    base_delay = 0.5  # Initial delay for exponential backoff
+    
     for attempt in range(retries):
         try:
-            #Create a UDP socket
+            # Create a UDP socket
             sock = socket.socket(socket.AF_INET6 if ':' in source_ip else socket.AF_INET, socket.SOCK_DGRAM)
             sock.settimeout(timeout)
             try:
@@ -66,17 +177,26 @@ def send_stun_request(stun_host, stun_port, source_ip, source_port, retries=3, t
             message = build_binding_request()
             sock.sendto(message, (stun_host, stun_port))
             response, _ = sock.recvfrom(2048)
-            mapped_address =  parse_stun_response(response)
+            parsed_response = parse_stun_response(response)
             sock.close()
-            return mapped_address, source_ip, source_port
+            return parsed_response, source_ip, source_port
         except socket.timeout:
             if sock:
                 sock.close()
-            time.sleep(1)
+            if use_backoff:
+                # Exponential backoff: 0.5s, 1s, 2s, 4s...
+                delay = base_delay * (2 ** attempt)
+                time.sleep(min(delay, 8))  # Cap at 8 seconds
+            else:
+                time.sleep(1)
         except Exception:
             if sock:
                 sock.close()
-            time.sleep(1)
+            if use_backoff:
+                delay = base_delay * (2 ** attempt)
+                time.sleep(min(delay, 8))
+            else:
+                time.sleep(1)
     return None, None, None
 
 def check_ipv6_connectivity():
@@ -111,46 +231,71 @@ def get_source_ip(use_ipv6=False, interface_ip=None):
         return None
 
 def test_stun(server, port, use_ipv6=False, interface_ip=None):
+    """Test STUN binding and return external address information"""
     source_ip = get_source_ip(use_ipv6, interface_ip)
     if not source_ip:
-        return None, None, None, None
+        return None, None, None, None, None
         
     source_port = random.randint(49152, 65535)
     response, source_ip, source_port = send_stun_request(server, port, source_ip, source_port)
 
-    if response:
-        external_ip, external_port = response
+    if response and response.get('address'):
+        external_ip, external_port = response['address']
+        other_address = response.get('other_address')
+        software = response.get('software')
+        
         if ':' in (source_ip or ''):
             print(f"Internal: [{source_ip}]:{source_port}")
             print(f"External: [{external_ip}]:{external_port}")
         else:
             print(f"Internal: {source_ip}:{source_port}")
             print(f"External: {external_ip}:{external_port}")
+        
+        if software:
+            print(f"Server: {software}")
+        if other_address:
+            print(f"Other Address: {other_address[0]}:{other_address[1]}")
+            
+        return external_ip, external_port, source_ip, source_port, other_address
     else:
-        external_ip, external_port = None, None
         print(f"Failed to get STUN response")
+        return None, None, None, None, None
 
-    return external_ip, external_port, source_ip, source_port
+def get_mapped_address(response):
+    """Extract mapped address from response (handles both old and new format)"""
+    if response is None:
+        return None
+    if isinstance(response, dict):
+        return response.get('address')
+    return response
 
 def mapping_behavior(stun_host, stun_port, source_ip, source_port):
-    #Test 1: Send to primary STUN server
-    response1 = send_stun_request(stun_host, stun_port, source_ip, source_port)
-    time.sleep(1)
-    #Test 2: Change STUN port
-    response2 = send_stun_request(stun_host, stun_port + 1, source_ip, source_port)
+    """Determine NAT mapping behavior per RFC 5780"""
+    # Test 1: Send to primary STUN server
+    response1, _, _ = send_stun_request(stun_host, stun_port, source_ip, source_port)
+    mapped1 = get_mapped_address(response1)
+    time.sleep(0.5)
+    
+    # Test 2: Change STUN port (same IP, different port)
+    response2, _, _ = send_stun_request(stun_host, stun_port + 1, source_ip, source_port)
+    mapped2 = get_mapped_address(response2)
 
-    if response1:
-        if (response1[0] == (source_ip, source_port)):
+    if mapped1:
+        if mapped1 == (source_ip, source_port):
             print("Mapping behavior: Direct")
-        elif (response1[0] == response2[0]):
+        elif mapped2 and mapped1 == mapped2:
             print("Mapping behavior: Endpoint-Independent")
-        elif (response1[0] != response2[0]):
-            #Test 3: Change source port
-            response3 = send_stun_request(stun_host, stun_port, source_ip, source_port + 1)
-            if (response3[0] == response2[0]):
+        elif mapped2 and mapped1 != mapped2:
+            # Test 3: Change source port
+            time.sleep(0.5)
+            response3, _, _ = send_stun_request(stun_host, stun_port, source_ip, source_port + 1)
+            mapped3 = get_mapped_address(response3)
+            if mapped3 and mapped3 == mapped2:
                 print("Mapping behavior: Address-Dependent")
             else:
                 print("Mapping behavior: Address and Port-Dependent")
+        else:
+            print("Mapping behavior: Unknown (test 2 failed)")
     else:
         print("Failed to determine Mapping behavior")
 
@@ -199,7 +344,7 @@ def run_tests(stun_host, stun_port, ip_version, interface_ip=None):
     print(f"Testing {'IPv6' if ip_version == 6 else 'IPv4'}")
     print(f"{'=' * 50}")
     
-    external_ip, external_port, source_ip, source_port = test_stun(
+    external_ip, external_port, source_ip, source_port, other_address = test_stun(
         stun_host, stun_port, use_ipv6=(ip_version == 6), interface_ip=interface_ip
     )
 
