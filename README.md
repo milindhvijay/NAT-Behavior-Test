@@ -322,6 +322,7 @@ Enter custom STUN server as domain:port (e.g., stun.example.com:3478, default po
 ```
 NAT-Behavior-Test/
 ├── start.py              # Main entry point with automated testing
+├── stun_utils.py         # Shared STUN protocol utilities and parsing
 ├── RFC5780-UDP.py        # UDP protocol implementation
 ├── RFC5780-TCP.py        # TCP protocol implementation
 ├── RFC5780-TLS.py        # TLS protocol implementation
