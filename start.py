@@ -18,6 +18,95 @@ STUN_SERVERS = [
     "Custom Server",  # Option to enter a custom server
 ]
 
+# Test configuration options
+TEST_OPTIONS = {
+    'protocols': {
+        '1': {'name': 'All Protocols', 'tests': ['UDP', 'TCP', 'TLS']},
+        '2': {'name': 'UDP only', 'tests': ['UDP']},
+        '3': {'name': 'TCP only', 'tests': ['TCP']},
+        '4': {'name': 'TLS only', 'tests': ['TLS']},
+        '5': {'name': 'UDP + TCP', 'tests': ['UDP', 'TCP']},
+        '6': {'name': 'UDP + TLS', 'tests': ['UDP', 'TLS']},
+        '7': {'name': 'TCP + TLS', 'tests': ['TCP', 'TLS']},
+    },
+    'ip_versions': {
+        '1': {'name': 'Both IPv4 and IPv6', 'skip_ipv4': False, 'skip_ipv6': False},
+        '2': {'name': 'IPv4 only', 'skip_ipv4': False, 'skip_ipv6': True},
+        '3': {'name': 'IPv6 only', 'skip_ipv4': True, 'skip_ipv6': False},
+    }
+}
+
+def select_test_options(ipv4_available, ipv6_available):
+    """
+    Present test selection menu and return user's choices.
+    Returns a dict with 'protocols' (list) and 'skip_ipv4', 'skip_ipv6' (bools)
+    """
+    print("\n" + "=" * 50)
+    print("TEST CONFIGURATION")
+    print("=" * 50)
+    
+    # Protocol selection
+    print("\nSelect protocols to test:")
+    print("-" * 30)
+    for key, value in TEST_OPTIONS['protocols'].items():
+        default_marker = " (default)" if key == '1' else ""
+        print(f"  {key}. {value['name']}{default_marker}")
+    
+    selected_protocols = None
+    while selected_protocols is None:
+        try:
+            choice = input("\nEnter choice [1-7]: ").strip()
+            if not choice:
+                choice = '1'
+            if choice in TEST_OPTIONS['protocols']:
+                selected_protocols = TEST_OPTIONS['protocols'][choice]['tests']
+                print(f"  → {', '.join(selected_protocols)}")
+            else:
+                print("  Invalid choice. Please enter 1-7.")
+        except KeyboardInterrupt:
+            print("\n\nExiting...")
+            sys.exit(0)
+    
+    # IP version selection (only if both are available)
+    skip_ipv4 = False
+    skip_ipv6 = False
+    
+    if ipv4_available and ipv6_available:
+        print("\nSelect IP version(s) to test:")
+        print("-" * 30)
+        for key, value in TEST_OPTIONS['ip_versions'].items():
+            default_marker = " (default)" if key == '1' else ""
+            print(f"  {key}. {value['name']}{default_marker}")
+        
+        while True:
+            try:
+                choice = input("\nEnter choice [1-3]: ").strip()
+                if not choice:
+                    choice = '1'
+                if choice in TEST_OPTIONS['ip_versions']:
+                    ip_config = TEST_OPTIONS['ip_versions'][choice]
+                    skip_ipv4 = ip_config['skip_ipv4']
+                    skip_ipv6 = ip_config['skip_ipv6']
+                    print(f"  → {ip_config['name']}")
+                    break
+                else:
+                    print("  Invalid choice. Please enter 1-3.")
+            except KeyboardInterrupt:
+                print("\n\nExiting...")
+                sys.exit(0)
+    elif ipv4_available:
+        print("\n  ℹ Only IPv4 available - testing IPv4 only")
+        skip_ipv6 = True
+    elif ipv6_available:
+        print("\n  ℹ Only IPv6 available - testing IPv6 only")
+        skip_ipv4 = True
+    
+    return {
+        'protocols': selected_protocols,
+        'skip_ipv4': skip_ipv4,
+        'skip_ipv6': skip_ipv6
+    }
+
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
 
@@ -32,6 +121,7 @@ def print_title():
 
         """
     print(title)
+
 
 def get_network_interfaces():
     """Get all network interfaces with their names and IP addresses (cross-platform)"""
@@ -377,7 +467,7 @@ def get_stun_server_choice():
             print(f"Error: '{user_input}' is not a valid option. Choose between 1-{len(STUN_SERVERS)}.")
             continue
 
-def run_test(script_name, stun_server_info, skip_ipv6=False, interface=None):
+def run_test(script_name, stun_server_info, skip_ipv4=False, skip_ipv6=False, interface=None):
     try:
         server, port = stun_server_info
         
@@ -385,6 +475,8 @@ def run_test(script_name, stun_server_info, skip_ipv6=False, interface=None):
         cmd = [sys.executable, script_name, server]
         if port is not None:
             cmd.append(str(port))
+        if skip_ipv4:
+            cmd.append('--skip-ipv4')
         if skip_ipv6:
             cmd.append('--skip-ipv6')
         if interface:
@@ -443,16 +535,21 @@ def main():
     print("Checking network connectivity...")
     ipv4_available, ipv6_available = check_connectivity()
     
-    print(f"\n{'=' * 70}")
+    print(f"\n{'=' * 50}")
     print("NETWORK CONNECTIVITY")
-    print(f"{'=' * 70}")
-    print(f"IPv4: {'Available' if ipv4_available else 'Not Available'}")
-    print(f"IPv6: {'Available' if ipv6_available else 'Not Available'}")
-    print(f"{'=' * 70}")
+    print(f"{'=' * 50}")
+    print(f"  IPv4: {'✓ Available' if ipv4_available else '✗ Not Available'}")
+    print(f"  IPv6: {'✓ Available' if ipv6_available else '✗ Not Available'}")
     
     if not ipv4_available and not ipv6_available:
         print("\nNo network connectivity detected. Cannot run tests.")
         return
+    
+    # Let user select which tests to run
+    test_config = select_test_options(ipv4_available, ipv6_available)
+    selected_protocols = test_config['protocols']
+    skip_ipv4 = test_config['skip_ipv4']
+    skip_ipv6 = test_config['skip_ipv6']
     
     # Get network interfaces and let user select
     interfaces = get_network_interfaces()
@@ -464,30 +561,40 @@ def main():
             ips.append(f"IPv4: {selected_interface['ipv4']}")
         if selected_interface['ipv6']:
             ips.append(f"IPv6: {selected_interface['ipv6']}")
-        print(f"\nUsing interface: {selected_interface['name']} ({', '.join(ips)})")
+        print(f"\n  → Using interface: {selected_interface['name']} ({', '.join(ips)})")
     else:
-        print("\nUsing auto-detected default interface")
+        print("\n  → Using auto-detected default interface")
     
     print_stun_servers()
     stun_server_info = get_stun_server_choice()
     
-    print()  # Add one blank line after server selection
+    # Build the list of tests to run based on user selection
+    all_tests = {
+        'UDP': ("RFC5780-UDP.py", "UDP"),
+        'TCP': ("RFC5780-TCP.py", "TCP"),
+        'TLS': ("RFC5780-TLS.py", "TLS")
+    }
     
-    # Run all three tests sequentially
-    tests = [
-        ("RFC5780-UDP.py", "UDP"),
-        ("RFC5780-TCP.py", "TCP"),
-        ("RFC5780-TLS.py", "TLS")
-    ]
+    tests = [all_tests[proto] for proto in selected_protocols if proto in all_tests]
     
-    skip_ipv6 = not ipv6_available
+    print(f"\n{'=' * 50}")
+    print("RUNNING TESTS")
+    print(f"{'=' * 50}")
+    print(f"  Protocols: {', '.join(selected_protocols)}")
+    ip_versions = []
+    if not skip_ipv4:
+        ip_versions.append("IPv4")
+    if not skip_ipv6:
+        ip_versions.append("IPv6")
+    print(f"  IP Versions: {', '.join(ip_versions)}")
+    print(f"  Server: {stun_server_info[0]}")
     
     results = []
     for script, protocol in tests:
-        print(f"\n{'#' * 70}")
-        print(f"# {protocol} Test")
-        print(f"{'#' * 70}\n")
-        behaviors = run_test(script, stun_server_info, skip_ipv6, selected_interface)
+        print(f"\n{'─' * 50}")
+        print(f"  {protocol} Test")
+        print(f"{'─' * 50}")
+        behaviors = run_test(script, stun_server_info, skip_ipv4, skip_ipv6, selected_interface)
         results.append((protocol, behaviors))
     
     # Summary - Display as table
