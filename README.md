@@ -13,10 +13,17 @@ This tool helps network administrators, developers, and security professionals u
 - **Network Interface Selection**: Choose specific network interfaces for testing (en0, eth0, Wi-Fi, etc.)
 - **Cross-Platform**: Works on macOS, Linux, and Windows with native interface enumeration
 - **RFC 5780 Compliant**: Implements standard NAT behavior discovery mechanisms
+- **RFC 5389/8489 Compliant**: Supports modern STUN protocol with XOR-MAPPED-ADDRESS
 - **Automated Testing**: Single command runs all tests sequentially
 - **Built-in STUN Servers**: Pre-configured list of public STUN servers
 - **Custom Server Support**: Option to test against your own STUN server
 - **Tabular Summary**: Clean, formatted table showing NAT mapping and filtering behavior
+- **Enhanced STUN Attributes**: Parses and displays additional response attributes:
+  - XOR-MAPPED-ADDRESS (preferred over legacy MAPPED-ADDRESS)
+  - OTHER-ADDRESS (alternate server for NAT testing)
+  - RESPONSE-ORIGIN (source of the response)
+  - SOFTWARE (server software identification)
+- **Exponential Backoff Retry**: Robust retry mechanism for unreliable networks
 
 ## NAT Behavior Classifications
 
@@ -130,6 +137,8 @@ Testing IPv4
 ==================================================
 Internal: 91.99.229.254:60760
 External: 91.99.229.254:60760
+Server: Coturn-4.5.0.5 'dan Eider'
+Other Address: 193.16.218.162:3479
 Mapping behavior: Direct
 Filtering behavior: Endpoint-Independent
 
@@ -138,6 +147,8 @@ Testing IPv6
 ==================================================
 Internal: [2a01:4f8:1c1a:98c6::1]:64275
 External: [2a01:4f8:1c1a:98c6::1]:64275
+Server: Coturn-4.5.0.5 'dan Eider'
+Other Address: [2a01:4f8::1]:3479
 Mapping behavior: Direct
 Filtering behavior: Endpoint-Independent
 
@@ -154,6 +165,7 @@ Testing IPv4 TCP
 ==================================================
 Internal: 91.99.229.254:60344
 External: 91.99.229.254:60344
+Server: Coturn-4.5.0.5 'dan Eider'
 TCP Mapping behavior: Direct
 
 ==================================================
@@ -161,6 +173,7 @@ Testing IPv6 TCP
 ==================================================
 Internal: [2a01:4f8:1c1a:98c6::1]:54475
 External: [2a01:4f8:1c1a:98c6::1]:54475
+Server: Coturn-4.5.0.5 'dan Eider'
 TCP Mapping behavior: Direct
 
 ######################################################################
@@ -176,6 +189,7 @@ Testing IPv4 TLS
 ==================================================
 Internal: 91.99.229.254:58364
 External: 91.99.229.254:58364
+Server: Coturn-4.5.0.5 'dan Eider'
 TLS Mapping behavior: Direct
 
 ==================================================
@@ -183,6 +197,7 @@ Testing IPv6 TLS
 ==================================================
 Internal: [2a01:4f8:1c1a:98c6::1]:64826
 External: [2a01:4f8:1c1a:98c6::1]:64826
+Server: Coturn-4.5.0.5 'dan Eider'
 TLS Mapping behavior: Direct
 
 ==========================================================================================
@@ -310,10 +325,20 @@ NAT-Behavior-Test/
 ├── RFC5780-UDP.py        # UDP protocol implementation
 ├── RFC5780-TCP.py        # TCP protocol implementation
 ├── RFC5780-TLS.py        # TLS protocol implementation
-└── README.md             # This file
+├── README.md             # This file
+└── TODO.md               # Planned improvements and roadmap
 ```
 
 ## Understanding Results
+
+### Output Fields
+
+- **Internal**: Your local IP address and port
+- **External**: Your public (NAT-translated) IP address and port as seen by the STUN server
+- **Server**: STUN server software identification (SOFTWARE attribute)
+- **Other Address**: Alternate server IP:port for NAT behavior testing (OTHER-ADDRESS attribute)
+- **Mapping behavior**: How your NAT assigns external ports
+- **Filtering behavior**: Which incoming packets your NAT accepts (UDP only)
 
 ### What Your Results Mean
 
@@ -411,7 +436,8 @@ Contributions are welcome! Please feel free to submit pull requests or open issu
 ## References
 
 - [RFC 5780: NAT Behavior Discovery Using STUN](https://tools.ietf.org/html/rfc5780)
-- [RFC 5389: Session Traversal Utilities for NAT (STUN)](https://tools.ietf.org/html/rfc5389)
+- [RFC 8489: Session Traversal Utilities for NAT (STUN)](https://tools.ietf.org/html/rfc8489) - Latest STUN specification
+- [RFC 5389: Session Traversal Utilities for NAT (STUN)](https://tools.ietf.org/html/rfc5389) - Original STUN specification
 - [RFC 4787: NAT Behavioral Requirements for UDP](https://tools.ietf.org/html/rfc4787)
 
 ## Acknowledgments
